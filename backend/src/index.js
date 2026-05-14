@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import authRoutes from "./modules/auth/auth.routes.js";
+import pollRoutes from "./modules/polls/polls.routes.js"
 import cors from "cors"
 import cookieParser from "cookie-parser"
 
@@ -24,6 +25,7 @@ function main() {
   });
 
   app.use("/api/auth", authRoutes)
+  app.use("/api/poll", pollRoutes)
 
 }
 

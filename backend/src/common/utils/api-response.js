@@ -18,6 +18,11 @@ class ApiResponse {
   static noContent(res){
     return res.status(204).send()
   }
+  static error(res, message){
+    return res.status(405).json({
+      message
+    })
+  }
 }
 
 export default ApiResponse;
