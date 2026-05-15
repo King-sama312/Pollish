@@ -81,19 +81,7 @@ function RegisterPage() {
             {errors.password && <div className="text-error">{errors.password.message}</div>}
           </div>
 
-          <div className="input-group" style={{ position: "relative" }}>
-            <span style={{ position: "absolute", left: "1rem", top: "50%", transform: "translateY(-50%)", color: "var(--text-secondary)" }}>🔒</span>
-            <input
-              type="password"
-              placeholder="Confirm password"
-              {...register("confirmPassword", { 
-                required: "Confirm your password",
-                validate: value => value === password || "Passwords do not match"
-              })}
-              style={{ paddingLeft: "2.5rem" }}
-            />
-            {errors.confirmPassword && <div className="text-error">{errors.confirmPassword.message}</div>}
-          </div>
+
 
           <button
             type="submit"
