@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  valkey:
+    image: valkey/valkey:7-alpine
+    container_name: poll_valkey
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    command: valkey-server --appendonly yes
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: poll_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: polls_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  valkey_data:
+  postgres_data:

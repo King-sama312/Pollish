@@ -9,11 +9,12 @@ const api = axios.create({
 
 /* No request interceptor needed — cookies are auto-attached */
 
+let refreshPromise = null;
+
 api.interceptors.response.use(
   (response) => response,
 
   async (error) => {
-    let refreshPromise = null;
 
     const originalRequest = error.config;
 
@@ -28,7 +29,9 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
-      refreshPromise = refreshPromise || axios.post(
+      refreshPromise =
+        refreshPromise ||
+        axios.post(
           `${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}/auth/refresh`,
           {},
           { withCredentials: true },
@@ -36,15 +39,15 @@ api.interceptors.response.use(
 
       try {
         // Refresh — new cookies are set automatically by the Set-Cookie header
-        await refreshPromise
+        await refreshPromise;
         // Retry original request — new cookies will be sent automatically
         return api(originalRequest);
       } catch (refreshError) {
         authActions.setUser?.(null);
         window.location.href = "/login";
         return Promise.reject(refreshError);
-      }finally{
-        refreshPromise = null
+      } finally {
+        refreshPromise = null;
       }
     }
 

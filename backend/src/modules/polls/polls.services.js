@@ -1,266 +1,166 @@
 import ApiError from "../../common/utils/api-error.js";
-import { eq, and, inArray, sql } from "drizzle-orm";
-import { db } from "../../../src/db/index.js";
-import { polls, pollOptions, votes } from "../../../src/db/schema.js";
-
-// ──────────────────────────────────────────────
-//  POLL CRUD
-// ──────────────────────────────────────────────
+import { eq, desc, sql, and } from "drizzle-orm";
+import { db } from "../../db/index.js";
+import { users, polls, pollOptions, votes } from "../../db/schema.js";
 
 export const createPoll = async ({
   creatorId,
   question,
   description,
   isAnonymous,
-  allowMultipleChoices,
-  endAt,
+  isActive,
+  endsAt,
   options,
 }) => {
-  try {
-    const [poll] = await db.insert(polls).values({
+  if (
+    (!creatorId,
+    !question,
+    !isAnonymous,
+    !isActive,
+    !options)
+  )
+    throw ApiError.badRequest("Please provide all the required fields");
+
+  const [poll] = await db
+    .insert(polls)
+    .values({
       creatorId,
       question,
       description,
       isAnonymous,
-      allowMultipleChoices,
-      endsAt: endAt ? new Date(endAt) : null,
-    }).returning();
+      isActive,
+      endsAt: endsAt ? new Date(endsAt) : new Date(),
+    })
+    .returning();
 
-    if (options && options.length > 0) {
-      await db.insert(pollOptions).values(
-        options.map((option, index) => ({
-          pollId: poll.id,
-          text: option.text,
-          displayOrder: option.displayOrder ?? index,
-        }))
-      );
-    }
+  const variablePollOptions = await Promise.all(
+    options.map(async (text, index) => {
+      const [option] = await db
+        .insert(pollOptions)
+        .values({ pollId: poll.id, text, displayOrder: index })
+        .returning();
+      return option;
+    }),
+  );
 
-    // Return the full poll with its options
-    const createdOptions = await db
-      .select()
-      .from(pollOptions)
-      .where(eq(pollOptions.pollId, poll.id));
-
-    return { ...poll, options: createdOptions };
-  } catch (error) {
-    console.log("Create poll error", error);
-    throw ApiError.badRequest("Failed to create poll");
-  }
+  return { poll, options: variablePollOptions };
 };
 
-export const getPollById = async (pollId) => {
-  try {
-    const [poll] = await db.select().from(polls).where(eq(polls.id, pollId));
-    if (!poll) throw ApiError.notFound("Poll not found");
-    return poll;
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    console.log("Get poll error", error);
-    throw ApiError.badRequest("Failed to get poll");
-  }
+export const getPolls = async (userId) => {
+  // Aggregate vote counts using a subquery or left join
+  const result = await db
+    .select({
+      id: polls.id,
+      question: polls.question,
+      description: polls.description,
+      isAnonymous: polls.isAnonymous,
+      isPublished: polls.isPublished,
+      isActive: polls.isActive,
+      endsAt: polls.endsAt,
+      createdAt: polls.createdAt,
+      totalVotes: sql`count(${votes.id})::int`,
+    })
+    .from(polls)
+    .leftJoin(votes, eq(polls.id, votes.pollId))
+    .where(eq(polls.creatorId, userId))
+    .groupBy(polls.id)
+    .orderBy(desc(polls.createdAt));
+
+  return { polls: result || [] };
 };
 
-export const getPollOptions = async (pollId) => {
-  try {
-    // NOTE: renamed local variable to avoid shadowing the imported `pollOptions` table
-    const options = await db
-      .select()
-      .from(pollOptions)
-      .where(eq(pollOptions.pollId, pollId));
-    return options;
-  } catch (error) {
-    console.log("Get poll options error", error);
-    throw ApiError.badRequest("Failed to get poll options");
+export const getPollById = async (pollId, userId, requireResults = false) => {
+  const poll = await db.query.polls.findFirst({
+    where: eq(polls.id, pollId),
+  });
+
+  if (!poll) throw ApiError.notFound("Poll not found");
+
+  const canViewResults = poll.isPublished || poll.creatorId === userId;
+
+  // Only throw forbidden if the client explicitly requests the results and can't view them
+  if (requireResults && !canViewResults) {
+    throw ApiError.forbidden("This poll's results are not published yet.");
   }
+
+  const optionsData = await db
+    .select({
+      id: pollOptions.id,
+      text: pollOptions.text,
+      displayOrder: pollOptions.displayOrder,
+      voteCount: sql`count(${votes.id})::int`,
+    })
+    .from(pollOptions)
+    .leftJoin(votes, eq(pollOptions.id, votes.optionId))
+    .where(eq(pollOptions.pollId, poll.id))
+    .groupBy(pollOptions.id)
+    .orderBy(pollOptions.displayOrder);
+
+  const totalVotes = optionsData.reduce((acc, curr) => acc + curr.voteCount, 0);
+
+  if (!canViewResults) {
+    const hiddenOptions = optionsData.map(o => ({ ...o, voteCount: 0 }));
+    return { poll, options: hiddenOptions, totalVotes: 0 };
+  }
+
+  return { poll, options: optionsData, totalVotes };
 };
 
-export const addPollOptions = async (pollId, options) => {
-  try {
-    const insertedOptions = await db
-      .insert(pollOptions)
-      .values(options.map((option, index) => ({ pollId, ...option, displayOrder: option.displayOrder ?? index })))
-      .returning();
-    return insertedOptions;
-  } catch (error) {
-    console.log("Add poll options error", error);
-    throw ApiError.badRequest("Failed to add poll options");
-  }
+export const deletePoll = async (pollId, userId) => {
+  const poll = await db.query.polls.findFirst({
+    where: eq(polls.id, pollId),
+  });
+
+  if (!poll) throw ApiError.notFound("Poll not found");
+  if (poll.creatorId !== userId) throw ApiError.forbidden("Not authorized");
+
+  await db.delete(polls).where(eq(polls.id, pollId));
+  return { deleted: true };
 };
 
-export const deletePollOption = async (optionId) => {
-  try {
-    await db.delete(pollOptions).where(eq(pollOptions.id, optionId));
-  } catch (error) {
-    console.log("Delete poll option error", error);
-    throw ApiError.badRequest("Failed to delete poll option");
-  }
+export const publishPoll = async (pollId, userId, isPublished) => {
+  const poll = await db.query.polls.findFirst({
+    where: eq(polls.id, pollId),
+  });
+
+  if (!poll) throw ApiError.notFound("Poll not found");
+  if (poll.creatorId !== userId) throw ApiError.forbidden("Not authorized");
+
+  const [updatedPoll] = await db
+    .update(polls)
+    .set({ isPublished, updatedAt: new Date() })
+    .where(eq(polls.id, pollId))
+    .returning();
+
+  return updatedPoll;
 };
 
-export const updatePoll = async (pollId, updateData) => {
-  try {
-    const [updated] = await db
-      .update(polls)
-      .set({
-        ...updateData,
-        updatedAt: new Date(),
-      })
-      .where(eq(polls.id, pollId))
-      .returning();
-    if (!updated) throw ApiError.notFound("Poll not found");
-    return updated;
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    console.log("Update poll error", error);
-    throw ApiError.badRequest("Failed to update poll");
+export const votePoll = async ({ pollId, optionId, userId, voterFingerPrint, IPHash }) => {
+  // Validate option exists for the poll
+  const option = await db.query.pollOptions.findFirst({
+    where: and(eq(pollOptions.id, optionId), eq(pollOptions.pollId, pollId)),
+  });
+
+  if (!option) {
+    throw ApiError.badRequest("Invalid option for this poll");
   }
-};
 
-export const deletePoll = async (pollId) => {
-  try {
-    const [deleted] = await db
-      .delete(polls)
-      .where(eq(polls.id, pollId))
-      .returning();
-    if (!deleted) throw ApiError.notFound("Poll not found");
-    return deleted;
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    console.log("Delete poll error", error);
-    throw ApiError.badRequest("Failed to delete poll");
-  }
-};
-
-// ──────────────────────────────────────────────
-//  VOTING
-// ──────────────────────────────────────────────
-
-/**
- * Cast a vote on a poll.
- *
- * @param {Object} params
- * @param {string} params.pollId       - The poll being voted on
- * @param {string|string[]} params.optionIds - One optionId or an array (for multiple-choice polls)
- * @param {string} params.voterFingerprint - Browser fingerprint UUID from middleware
- * @param {string} params.ipHash        - HMAC-SHA256 of voter IP from middleware
- * @param {string|null} params.userId   - Authenticated user ID or null for anonymous
- * @param {boolean} params.allowMultipleChoices - From the poll record
- *
- * For single-choice polls: `optionIds` must contain exactly one ID.
- * For multiple-choice polls: `optionIds` may contain 1+ IDs.
- */
-export const castVote = async ({
-  pollId,
-  optionIds,
-  voterFingerprint,
-  ipHash,
-  userId,
-  allowMultipleChoices,
-}) => {
-  try {
-    // Normalise to array
-    const ids = Array.isArray(optionIds) ? optionIds : [optionIds];
-
-    if (ids.length === 0) {
-      throw ApiError.badRequest("At least one option must be selected");
-    }
-
-    if (!allowMultipleChoices && ids.length > 1) {
-      throw ApiError.badRequest("This poll only allows a single choice");
-    }
-
-    // Verify that all optionIds belong to this poll
-    const validOptions = await db
-      .select()
-      .from(pollOptions)
-      .where(and(eq(pollOptions.pollId, pollId), inArray(pollOptions.id, ids)));
-
-    if (validOptions.length !== ids.length) {
-      throw ApiError.badRequest(
-        "One or more selected options do not belong to this poll"
-      );
-    }
-
-    // Insert vote rows (one per chosen option)
-    const voteRows = ids.map((optionId) => ({
+  const [vote] = await db
+    .insert(votes)
+    .values({
       pollId,
       optionId,
-      voterFingerPrint: voterFingerprint,
-      IPHash: ipHash,
-      userId: userId || null,
-    }));
+      userId,
+      voterFingerPrint,
+      IPHash,
+    })
+    .returning();
 
-    const insertedVotes = await db.insert(votes).values(voteRows).returning();
+  // Get total votes for the poll to broadcast
+  const [{ totalVotes }] = await db
+    .select({ totalVotes: sql`count(${votes.id})::int` })
+    .from(votes)
+    .where(eq(votes.pollId, pollId));
 
-    return insertedVotes;
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    console.log("Cast vote error", error);
-    throw ApiError.badRequest("Failed to cast vote");
-  }
-};
-
-// ──────────────────────────────────────────────
-//  POLL RESULTS
-// ──────────────────────────────────────────────
-
-/**
- * Get a poll with its options and aggregated vote counts.
- * For anonymous polls, voter identities are stripped.
- *
- * Returns:
- *   {
- *     poll: { ...pollData },
- *     options: [
- *       { id, text, displayOrder, voteCount },
- *       ...
- *     ],
- *     totalVotes: number,
- *   }
- */
-export const getPollWithResults = async (pollId) => {
-  try {
-    const poll = await getPollById(pollId);
-    const options = await getPollOptions(pollId);
-
-    // Aggregate vote counts per option
-    const optionIds = options.map((o) => o.id);
-
-    let voteCountsMap = {};
-    if (optionIds.length > 0) {
-      const voteCounts = await db
-        .select({
-          optionId: votes.optionId,
-          count: sql`COUNT(*)`.as("count"),
-        })
-        .from(votes)
-        .where(inArray(votes.optionId, optionIds))
-        .groupBy(votes.optionId);
-
-      voteCountsMap = voteCounts.reduce((acc, row) => {
-        acc[row.optionId] = row.count;
-        return acc;
-      }, {});
-    }
-
-    const totalVotes = Object.values(voteCountsMap).reduce(
-      (sum, count) => sum + Number(count),
-      0
-    );
-
-    const optionsWithCounts = options.map((option) => ({
-      ...option,
-      voteCount: Number(voteCountsMap[option.id] || 0),
-    }));
-
-    return {
-      poll,
-      options: optionsWithCounts,
-      totalVotes,
-    };
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    console.log("Get poll results error", error);
-    throw ApiError.badRequest("Failed to get poll results");
-  }
+  return { vote, totalVotes };
 };

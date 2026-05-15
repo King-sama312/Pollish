@@ -7,15 +7,15 @@ import {
 } from "../../common/utils/jwt.utils.js";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { db } from "../../../src/db/index.js";
-import { users, refreshTokens } from "../../../src/db/schema.js";
+import { db } from "../../db/index.js";
+import { users, refreshTokens } from "../../db/schema.js";
 
 export const register = async ({ name, email, password }) => {
   try {
-    const existing = await db
+    const [existing] = await db
       .select()
       .from(users)
-      .where(eq(users.email, email)).get();
+      .where(eq(users.email, email));
 
     if (existing) {
       throw ApiError.conflict("Email already in use");
@@ -40,7 +40,7 @@ export const register = async ({ name, email, password }) => {
 };
 
 export const login = async ({ email, password }) => {
-  const user = await db.select().from(users).where(eq(users.email, email)).get();
+  const [user] = await db.select().from(users).where(eq(users.email, email));
 
   console.log("service user:", user)
   if (!user) {
@@ -67,7 +67,7 @@ export const login = async ({ email, password }) => {
 };
 
 export const getMe = async (userId)=>{
-  const user = await db.select().from(users).where(eq(users.id, userId)).get();
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
   if(!user){
     throw ApiError.notFound("User not found");
   }
@@ -80,7 +80,7 @@ export const refresh= async(oldRefreshToken)=>{
   try {
     const payload = verifyRefreshToken(oldRefreshToken);
     
-    const storedToken = await db.select().from(refreshTokens).where(eq(refreshTokens.token, oldRefreshToken)).get();
+    const [storedToken] = await db.select().from(refreshTokens).where(eq(refreshTokens.token, oldRefreshToken));
     if(!storedToken || storedToken.expiresAt < new Date()){
         throw ApiError.unauthorized("Invalid refresh token");
     }

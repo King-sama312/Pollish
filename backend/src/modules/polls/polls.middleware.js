@@ -2,9 +2,10 @@ import crypto from "crypto";
 import svgCaptcha from "svg-captcha";
 import ApiError from "../../common/utils/api-error.js";
 import { authenticate } from "../auth/auth.middlewares.js";
-import { db } from "../../../src/db/index.js";
-import { votes, polls } from "../../../src/db/schema.js";
+import { db } from "../../db/index.js";
+import { votes, polls } from "../../db/schema.js";
 import { eq, and } from "drizzle-orm";
+import { redisClient } from "../../redis/index.js";
 
 // ──────────────────────────────────────────────
 //  Configuration
@@ -15,21 +16,8 @@ const IP_HASH_SECRET =
 const FINGERPRINT_COOKIE_NAME = "voter_fp";
 const FINGERPRINT_COOKIE_MAX_AGE = 365 * 24 * 60 * 60 * 1000; // 1 year
 
-const CAPTCHA_TTL = 5 * 60 * 1000; // 5 minutes
-
-// ──────────────────────────────────────────────
-//  In-memory captcha store
-//  (swap with Redis for production)
-// ──────────────────────────────────────────────
-const captchaStore = new Map();
-
-// Periodic cleanup of expired captchas
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, entry] of captchaStore) {
-    if (now - entry.createdAt > CAPTCHA_TTL) captchaStore.delete(id);
-  }
-}, 60 * 1000);
+const CAPTCHA_TTL_SECONDS = 5 * 60; // 5 minutes (Redis EX)
+const CAPTCHA_KEY_PREFIX = "captcha:";
 
 // ──────────────────────────────────────────────
 //  Utility helpers (exported for testability)
@@ -68,11 +56,11 @@ export const getClientIP = (req) => {
 };
 
 /**
- * Create an SVG captcha challenge and store the answer keyed by a
- * one-time captchaId.  Returns { captchaId, svg } so the client
- * can render the image and submit both id + text later.
+ * Create an SVG captcha challenge and store the answer in Redis
+ * with a TTL.  Returns { captchaId, svg } so the client can
+ * render the image and submit both id + text later.
  */
-export const generateCaptcha = () => {
+export const generateCaptcha = async () => {
   const captcha = svgCaptcha.create({
     size: 6,
     noise: 3,
@@ -80,27 +68,27 @@ export const generateCaptcha = () => {
     background: "#f0f0f0",
   });
   const captchaId = crypto.randomUUID();
-  captchaStore.set(captchaId, {
-    text: captcha.text.toLowerCase(),
-    createdAt: Date.now(),
-  });
+  await redisClient.set(
+    `${CAPTCHA_KEY_PREFIX}${captchaId}`,
+    captcha.text.toLowerCase(),
+    { EX: CAPTCHA_TTL_SECONDS },
+  );
   return { captchaId, svg: captcha.data };
 };
 
 /**
- * Verify a captcha answer.  One-time use — the entry is deleted
+ * Verify a captcha answer from Redis.  One-time use — the key is deleted
  * regardless of whether the answer was correct.
  */
-export const verifyCaptcha = (captchaId, userInput) => {
-  const entry = captchaStore.get(captchaId);
-  if (!entry) return false;
-  if (Date.now() - entry.createdAt > CAPTCHA_TTL) {
-    captchaStore.delete(captchaId);
-    return false;
-  }
-  const isValid = entry.text === userInput.toLowerCase().trim();
-  captchaStore.delete(captchaId);
-  return isValid;
+export const verifyCaptcha = async (captchaId, userInput) => {
+  const key = `${CAPTCHA_KEY_PREFIX}${captchaId}`;
+  const stored = await redisClient.get(key);
+  if (!stored) return false;
+
+  // Delete immediately (one-time use)
+  await redisClient.del(key);
+
+  return stored === userInput.toLowerCase().trim();
 };
 
 // ──────────────────────────────────────────────
@@ -144,7 +132,8 @@ export const validatePollForVoting = async (req, res, next) => {
     const [poll] = await db.select().from(polls).where(eq(polls.id, pollId));
 
     if (!poll) throw ApiError.notFound("Poll not found");
-    if (!poll.isActive) throw ApiError.badRequest("This poll is no longer active");
+    if (!poll.isActive)
+      throw ApiError.badRequest("This poll is no longer active");
     if (poll.endsAt && new Date(poll.endsAt) < new Date()) {
       throw ApiError.badRequest("This poll has ended");
     }
@@ -181,7 +170,7 @@ export const validatePollForVoting = async (req, res, next) => {
  *   - Any authenticated user     → captcha never required
  *   - Cookie cleared by user     → treated as first-time → captcha again
  */
-export const validateVoter = (req, res, next) => {
+export const validateVoter = async (req, res, next) => {
   try {
     const ip = getClientIP(req);
     const ipHash = hashIP(ip);
@@ -195,10 +184,11 @@ export const validateVoter = (req, res, next) => {
         const { captchaId, captchaText } = req.body || {};
         if (!captchaId || !captchaText) {
           throw ApiError.badRequest(
-            "Captcha verification required. Request a captcha first via GET /polls/captcha"
+            "Captcha verification required. Request a captcha first via GET /polls/captcha/generate",
           );
         }
-        if (!verifyCaptcha(captchaId, captchaText)) {
+        const isValid = await verifyCaptcha(captchaId, captchaText);
+        if (!isValid) {
           throw ApiError.badRequest("Invalid or expired captcha");
         }
       }
@@ -244,14 +234,17 @@ export const validateVoter = (req, res, next) => {
 export const checkDuplicateVote = async (req, res, next) => {
   try {
     const pollId = req.params.pollId;
-    const { voterFingerprint, userId } = req.voterInfo;
+    const { voterFingerprint, userId, ipHash } = req.voterInfo;
 
     // Check by fingerprint
     const [existingByFingerprint] = await db
       .select()
       .from(votes)
       .where(
-        and(eq(votes.pollId, pollId), eq(votes.voterFingerPrint, voterFingerprint))
+        and(
+          eq(votes.pollId, pollId),
+          eq(votes.voterFingerPrint, voterFingerprint),
+        ),
       )
       .limit(1);
 
@@ -269,6 +262,23 @@ export const checkDuplicateVote = async (req, res, next) => {
 
       if (existingByUser) {
         throw ApiError.badRequest("You have already voted on this poll");
+      }
+    } else {
+      // Limit anonymous votes to 3 per IP per poll
+      if (ipHash) {
+        const { sql } = await import("drizzle-orm");
+        const result = await db.select({ count: sql`count(${votes.id})::int` })
+          .from(votes)
+          .where(
+            and(
+              eq(votes.pollId, pollId),
+              eq(votes.IPHash, ipHash)
+            )
+          );
+        const ipVoteCount = result[0]?.count || 0;
+        if (ipVoteCount >= 3) {
+          throw ApiError.badRequest("Rate limit exceeded: You cannot vote more than 3 times from the same IP address in anonymous mode.");
+        }
       }
     }
 

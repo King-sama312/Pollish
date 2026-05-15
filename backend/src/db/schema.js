@@ -1,34 +1,35 @@
-import { index, integer, uniqueIndex, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, uniqueIndex, text, boolean, timestamp, uuid, pgTable } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-export const users = sqliteTable("users", {
-  id: text("id")
+
+export const users = pgTable("users", {
+  id: uuid("id")
     .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
+    .defaultRandom(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at")
     .notNull()
-    .$defaultFn(() => new Date()),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .defaultNow(),
+  updatedAt: timestamp("updated_at")
     .notNull()
-    .$defaultFn(() => new Date()),
+    .defaultNow(),
 });
 
-export const refreshTokens = sqliteTable(
+export const refreshTokens = pgTable(
   "refresh_tokens",
   {
-    id: text("id")
+    id: uuid("id")
       .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
+      .defaultRandom(),
+    userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     token: text("token").notNull().unique(),
-    expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at")
       .notNull()
-      .$defaultFn(() => new Date()),
+      .defaultNow(),
   },
   (table) => [
     index("idx_refresh_tokens_user").on(table.userId),
@@ -36,41 +37,40 @@ export const refreshTokens = sqliteTable(
   ],
 );
 
-export const polls = sqliteTable("polls", {
-  id: text("id").primaryKey().$defaultFn(()=>crypto.randomUUID()),
-  creatorId: text("creator_id").notNull().references(()=> users.id, {onDelete: "cascade"}),
+export const polls = pgTable("polls", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  creatorId: uuid("creator_id").notNull().references(()=> users.id, {onDelete: "cascade"}),
   question: text("question").notNull(),
   description: text("description"),
-  isAnonymous: integer("is_anonymous", {mode: "boolean"}).notNull().default(false),
-  allowMultipleChoices: integer("allow_multiple_choices", {mode: "boolean"}).notNull().default(false),
-  isActive: integer("is_active", {mode:"boolean"}).notNull().default(true),
-  endsAt: integer("ends_at", {mode: "timestamp"}),
-  createdAt: integer("created_at", {mode: "timestamp"}).notNull().$defaultFn(()=> new Date()),
-  updatedAt: integer ("updated_at", {mode: "timestamp"}).notNull().$defaultFn(()=> new Date()),
-
+  isAnonymous: boolean("is_anonymous").notNull().default(false),
+  isPublished: boolean("is_published").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  endsAt: timestamp("ends_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp ("updated_at").notNull().defaultNow(),
 }, (table)=> [
   index("idx_polls_creator").on(table.creatorId),
   index("idx_polls_active").on(table.isActive),
-])
+]);
 
-export const pollOptions= sqliteTable("poll_options",{
-  id: text("id").primaryKey().$defaultFn(()=> crypto.randomUUID()),
-  pollId: text("poll_id").notNull().references(()=>polls.id, {onDelete: "cascade"}),
-  text:text("text").notNull(),
+export const pollOptions = pgTable("poll_options",{
+  id: uuid("id").primaryKey().defaultRandom(),
+  pollId: uuid("poll_id").notNull().references(()=>polls.id, {onDelete: "cascade"}),
+  text: text("text").notNull(),
   displayOrder: integer("display_order").notNull().default(0),
-  createdAt: integer("created_at", {mode: "timestamp"}).notNull().$defaultFn(()=> new Date()),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table)=>[
   index("idx_poll_options_poll").on(table.pollId),
-])
+]);
 
-export const votes = sqliteTable("votes", {
-  id: text("id").primaryKey().$defaultFn(()=> crypto.randomUUID()),
-  pollId: text("poll_id").notNull().references(()=> polls.id, {onDelete: "cascade"}),
-  optionId: text("option_id").notNull().references(()=> pollOptions.id, {onDelete:"cascade"}),
-  userId: text("user_id").references(()=> users.id, {onDelete:"cascade"}),
+export const votes = pgTable("votes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pollId: uuid("poll_id").notNull().references(()=> polls.id, {onDelete: "cascade"}),
+  optionId: uuid("option_id").notNull().references(()=> pollOptions.id, {onDelete:"cascade"}),
+  userId: uuid("user_id").references(()=> users.id, {onDelete:"cascade"}),
   voterFingerPrint: text("voter_fingerprint").notNull(),
   IPHash: text("ip_hash"),
-  createdAt: integer("created_at", {mode: "timestamp"}).notNull().$defaultFn(()=> new Date()),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table)=> [
   index("idx_votes_poll").on(table.pollId),
   index("idx_votes_option").on(table.optionId),
@@ -78,7 +78,7 @@ export const votes = sqliteTable("votes", {
 
   uniqueIndex("idx_votes_user_poll").on(table.userId, table.pollId),
   uniqueIndex("idx_votes_fingerprint_poll").on(table.voterFingerPrint, table.pollId)
-])
+]);
 
 // Relations
 export const pollsRelations = relations(polls, ({ one, many }) => ({
