@@ -50,20 +50,21 @@ function Dashboard() {
     }
   };
 
-  if (!user) return <div className="page-container" style={{textAlign: "center"}}>Loading...</div>;
-  if (loading) return <div className="page-container" style={{textAlign: "center"}}>Loading polls...</div>;
-  if (error) return <div className="page-container text-error" style={{textAlign: "center"}}>{error}</div>;
+  if (!user) return <div style={{textAlign: "center", padding: "4rem"}}>Loading...</div>;
+  if (loading) return <div style={{textAlign: "center", padding: "4rem"}}>Loading polls...</div>;
+  if (error) return <div className="text-error" style={{textAlign: "center", padding: "4rem"}}>{error}</div>;
 
   if (polls.length === 0) {
     return (
-      <div className="page-container">
+      <div>
         <div style={{ marginBottom: "2rem" }}>
-          <p style={{ color: "var(--primary-color)", fontWeight: "600", marginBottom: "0.5rem" }}>Welcome back, {user.name}!</p>
-          <h1>My Dashboard</h1>
+          <h1 style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>My Polls</h1>
+          <p style={{ color: "var(--text-secondary)" }}>Manage your created polls here.</p>
         </div>
-        <div className="glass-panel" style={{ textAlign: "center", padding: "4rem 2rem" }}>
+        <div className="glass-panel" style={{ textAlign: "center", padding: "5rem 2rem", background: "white" }}>
+          <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>📊</div>
           <h2 style={{ marginBottom: "1rem" }}>You haven't created any polls yet</h2>
-          <p style={{ color: "var(--text-secondary)", marginBottom: "2rem" }}>Start collecting feedback today by creating your first poll.</p>
+          <p style={{ color: "var(--text-secondary)", marginBottom: "2rem", maxWidth: "400px", margin: "0 auto 2rem auto" }}>Start collecting feedback today by creating your first simple, powerful poll.</p>
           <button onClick={() => navigate("/polls/create")}>
             Create a Poll
           </button>
@@ -73,14 +74,11 @@ function Dashboard() {
   }
 
   return (
-    <div className="page-container">
-      <div style={{ marginBottom: "2rem" }}>
-        <p style={{ color: "var(--primary-color)", fontWeight: "600", marginBottom: "0.5rem" }}>Welcome back, {user.name}!</p>
-        <div className="flex-between">
-          <h1 style={{ margin: 0 }}>My Dashboard</h1>
-          <button onClick={() => navigate("/polls/create")}>
-            + Create Poll
-          </button>
+    <div>
+      <div style={{ marginBottom: "2rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <h1 style={{ fontSize: "2rem", marginBottom: "0.5rem", marginTop: 0 }}>My Polls</h1>
+          <p style={{ color: "var(--text-secondary)", margin: 0 }}>Manage your created polls here.</p>
         </div>
       </div>
 
@@ -90,10 +88,10 @@ function Dashboard() {
           return (
             <div key={poll.id} className="poll-card">
               <Link to={`/polls/${poll.id}/results`} style={{ textDecoration: "none", color: "inherit" }}>
-                <h3 style={{ margin: "0 0 0.5rem 0" }}>{poll.question}</h3>
+                <h3 style={{ margin: "0 0 0.5rem 0", fontSize: "1.25rem" }}>{poll.question}</h3>
               </Link>
               {poll.description && (
-                <p style={{ margin: "0 0 1rem 0", color: "var(--text-secondary)", fontSize: "0.9rem", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                <p style={{ margin: "0 0 1rem 0", color: "var(--text-secondary)", fontSize: "0.95rem", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                   {poll.description}
                 </p>
               )}
@@ -103,28 +101,28 @@ function Dashboard() {
                 {poll.isPublished ? (
                   <span className="badge published">Published</span>
                 ) : (
-                  <span className="badge" style={{ background: "rgba(239, 68, 68, 0.2)", color: "#fca5a5" }}>Draft</span>
+                  <span className="badge" style={{ background: "#f3f4f6", color: "#4b5563" }}>Draft</span>
                 )}
-                {hasEnded && <span className="badge" style={{ background: "rgba(245, 158, 11, 0.2)", color: "#fcd34d" }}>Ended</span>}
+                {hasEnded && <span className="badge" style={{ background: "#fef3c7", color: "#92400e", borderColor: "#fde68a" }}>Ended</span>}
               </div>
 
               <div className="flex-between" style={{ borderTop: "1px solid var(--surface-border)", paddingTop: "1rem" }}>
                 <div style={{ display: "flex", flexDirection: "column" }}>
-                  <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Responses</span>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>Responses</span>
                   <span style={{ fontSize: "1.5rem", fontWeight: "700", color: "var(--primary-color)" }}>{poll.totalVotes}</span>
                 </div>
                 
                 <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <button className="secondary-btn" onClick={() => navigate(`/polls/${poll.id}/results`)} style={{ padding: "0.5rem 0.75rem", fontSize: "0.875rem" }}>
+                  <button className="secondary-btn" onClick={() => navigate(`/polls/${poll.id}/results`)} style={{ padding: "0.5rem 1rem", fontSize: "0.875rem" }}>
                     Results
                   </button>
                   {hasEnded && !poll.isPublished && (
-                    <button onClick={() => publishPoll(poll.id, true)} style={{ padding: "0.5rem 0.75rem", fontSize: "0.875rem", background: "var(--success-color)" }}>
+                    <button onClick={() => publishPoll(poll.id, true)} style={{ padding: "0.5rem 1rem", fontSize: "0.875rem", background: "var(--primary-color)" }}>
                       Publish
                     </button>
                   )}
                   {poll.isPublished && (
-                    <button className="secondary-btn" onClick={() => publishPoll(poll.id, false)} style={{ padding: "0.5rem 0.75rem", fontSize: "0.875rem" }}>
+                    <button className="secondary-btn" onClick={() => publishPoll(poll.id, false)} style={{ padding: "0.5rem 1rem", fontSize: "0.875rem" }}>
                       Unpublish
                     </button>
                   )}
