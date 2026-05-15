@@ -19,10 +19,6 @@ export default function DashboardLayout() {
 
   const navItems = [
     { name: "My Polls", path: "/dashboard", icon: "📊" },
-    { name: "Explore", path: "/explore", icon: "🔍" },
-    { name: "Results", path: "/results", icon: "📈" },
-    { name: "Bookmarks", path: "/bookmarks", icon: "🔖" },
-    { name: "Settings", path: "/settings", icon: "⚙️" },
   ];
 
   return (

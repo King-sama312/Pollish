@@ -77,18 +77,7 @@ function LoginPage() {
           </button>
         </form>
 
-        <div style={{ display: "flex", alignItems: "center", margin: "1.5rem 0" }}>
-          <div style={{ flex: 1, height: "1px", background: "var(--surface-border)" }}></div>
-          <span style={{ padding: "0 1rem", color: "var(--text-secondary)", fontSize: "0.875rem" }}>or</span>
-          <div style={{ flex: 1, height: "1px", background: "var(--surface-border)" }}></div>
-        </div>
 
-        <button className="secondary-btn" style={{ width: "100%", padding: "0.875rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", fontSize: "1rem" }}>
-          <svg width="20" height="20" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/>
-          </svg>
-          Login with Google
-        </button>
 
         <p style={{ textAlign: "center", marginTop: "2rem", fontSize: "0.75rem", color: "var(--text-secondary)" }}>
           By logging in, you agree to our <Link to="#">Terms</Link> and <Link to="#">Privacy Policy</Link>.

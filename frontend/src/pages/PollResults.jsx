@@ -3,6 +3,10 @@ import { useParams, Link } from "react-router-dom";
 import api from "../utils/intercept.js";
 import useSocket from "../hooks/useSocket.js";
 import { QRCodeSVG } from "qrcode.react";
+import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
+import { Doughnut } from "react-chartjs-2";
+
+ChartJS.register(ArcElement, Tooltip, Legend);
 
 function PollResults() {
   const { pollId } = useParams();
@@ -115,6 +119,42 @@ function PollResults() {
   const endsAtDate = poll.endsAt ? new Date(poll.endsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
   const isEnded = poll.endsAt && new Date(poll.endsAt) < new Date();
 
+  // Monochrome palette for the chart
+  const monochromeColors = ["#000000", "#333333", "#666666", "#999999", "#cccccc", "#e5e5e5"];
+  
+  const doughnutData = {
+    labels: options.map(o => o.text),
+    datasets: [
+      {
+        data: options.map(o => o.voteCount),
+        backgroundColor: monochromeColors.slice(0, options.length),
+        borderWidth: 2,
+        borderColor: "#ffffff",
+      },
+    ],
+  };
+
+  const doughnutOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'right',
+        labels: {
+          usePointStyle: true,
+          color: '#374151',
+          font: { family: 'Inter', size: 14 }
+        }
+      },
+      tooltip: {
+        backgroundColor: '#000000',
+        padding: 12,
+        cornerRadius: 8,
+      }
+    },
+    cutout: '70%',
+  };
+
   return (
     <div style={{ maxWidth: "800px", margin: "0", padding: "1rem 0" }}>
       <div style={{ marginBottom: "2rem" }}>
@@ -141,23 +181,32 @@ function PollResults() {
         <div style={{ paddingBottom: "1rem", color: "var(--text-secondary)", cursor: "not-allowed" }}>Voters</div>
       </div>
 
-      {/* Custom Horizontal Bar Charts */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", marginBottom: "4rem" }}>
-        {options.map((option) => {
-          const percentage = totalVotes > 0 ? Math.round((option.voteCount / totalVotes) * 100) : 0;
-          return (
-            <div key={option.id} style={{ display: "flex", alignItems: "center" }}>
-              <div style={{ width: "120px", fontWeight: 500, fontSize: "0.95rem" }}>{option.text}</div>
-              <div style={{ flex: 1, height: "24px", background: "#f3f4f6", borderRadius: "12px", overflow: "hidden", margin: "0 1.5rem" }}>
-                <div style={{ height: "100%", width: `${percentage}%`, background: "black", borderRadius: "12px", transition: "width 0.5s ease" }}></div>
+      <div style={{ display: "flex", gap: "4rem", flexWrap: "wrap", marginBottom: "4rem" }}>
+        {/* Custom Horizontal Bar Charts (Left Side) */}
+        <div style={{ flex: "2 1 400px", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          {options.map((option) => {
+            const percentage = totalVotes > 0 ? Math.round((option.voteCount / totalVotes) * 100) : 0;
+            return (
+              <div key={option.id} style={{ display: "flex", alignItems: "center" }}>
+                <div style={{ width: "120px", fontWeight: 500, fontSize: "0.95rem" }}>{option.text}</div>
+                <div style={{ flex: 1, height: "24px", background: "#f3f4f6", borderRadius: "12px", overflow: "hidden", margin: "0 1.5rem" }}>
+                  <div style={{ height: "100%", width: `${percentage}%`, background: "black", borderRadius: "12px", transition: "width 0.5s ease" }}></div>
+                </div>
+                <div style={{ width: "80px", textAlign: "right", color: "var(--text-secondary)", fontSize: "0.875rem", display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+                  <span style={{ fontWeight: 600, color: "black" }}>{percentage}%</span> 
+                  <span>({option.voteCount})</span>
+                </div>
               </div>
-              <div style={{ width: "80px", textAlign: "right", color: "var(--text-secondary)", fontSize: "0.875rem", display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
-                <span style={{ fontWeight: 600, color: "black" }}>{percentage}%</span> 
-                <span>({option.voteCount})</span>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+
+        {/* Doughnut Chart (Right Side) */}
+        {totalVotes > 0 && (
+          <div style={{ flex: "1 1 250px", height: "250px", display: "flex", justifyContent: "center", alignItems: "center" }}>
+            <Doughnut data={doughnutData} options={doughnutOptions} />
+          </div>
+        )}
       </div>
 
       {/* Stats Row */}
